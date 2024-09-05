@@ -1,6 +1,10 @@
 
 ---
 
+# Lab : Deploy infrastructure via Terraform using Azure Release Pipeline 
+
+Release pipeline reference: [Import Release Pipeline](WebAppTerraform.json)
+
 # Lab: Deploy an Azure WebApp Connected with Database using Azure Release Pipeline
 
 ## Overview
