@@ -1,153 +1,101 @@
 
 ---
 
-# Lab : Deploy infrastructure via Terraform using Azure Release Pipeline 
+# Azure Pipeline Integration with Terraform Tasks in Release Pipeline
 
-Release pipeline reference: [Import Release Pipeline](WebAppTerraform.json)
+In this lab, we will explore deploying infrastructure using Terraform in an Azure Release pipeline.
 
-# Lab: Deploy an Azure WebApp Connected with Database using Azure Release Pipeline
+## Use the following repository for code:
+[Import Release Pipeline](WebAppTerraform.json)
 
 ## Overview
 
-This lab demonstrates how to deploy an ASP.NET Core 6.0 LTS Razor web application connected to an Azure SQL Database using an Azure Release Pipeline. The web application retrieves a table of products from the SQL database. Upon successful deployment, the following page is displayed:
+We will configure an Azure Release pipeline to automate the deployment of resources using Terraform. This involves setting up a storage account, defining the Terraform configuration, and using Azure Pipelines to manage the infrastructure.
 
-![Homepage](imgs/homepage.png)
+### Initial Step:
 
-## Prerequisites
+- **Create a Storage Account**  
+  You need to create a storage account to store the Terraform state file. This allows Terraform to manage your infrastructure's state across different environments.
+  
+- **Create a Container Named 'terraform'**  
+  Inside the storage account, create a container named `terraform` and enable Blob Read-Only Access. 
 
-Before starting, ensure the following resources are deployed in Azure:
+**Why do we have a storage account?**  
+*Terraform uses the storage account to store the state file, which is essential for tracking the resources it manages. By storing the state file in a remote location (like an Azure Blob storage container), multiple team members or CI/CD pipelines can access it, ensuring consistent infrastructure management and avoiding conflicts.*
 
-- **Resource Group**: `rg-sqlapp-eastus2`
-- **Azure App Service Plan**: `appsvcplnsqlapp`
-  - SKU: F1 Shared Hosting
-  - Hosting: Windows
-  - Runtime Stack: .NET 6.0
-- **WebApp**: `webappsql`
-  - Default settings
-- **Azure SQL Server**: `sqlsvrwebappsql01`
-  - Configuration: DTU-Based, Basic
-  - Admin User: `sqlusr`
-  - Password: *[Your Password]*
-  - Allow access from Azure resources
-  - Add client IP address
-  - Default settings
-- **Azure SQL Database**: `webappsqldb01`
-  - Create the following table using the Query Editor in Azure Database:
+## Tasks:
 
+### 1. Clone the Repository
+- Clone the main branch of the repository and edit `main.tf` as required.
 
-```sql
-IF (NOT EXISTS (SELECT * 
-                FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_SCHEMA = 'dbo' 
-                AND  TABLE_NAME = 'Products'))
-BEGIN
+### 2. Create a New Azure Build Pipeline
+- Use the `azure-pipeline.yml` file in the repository to create a new Azure Build Pipeline.
 
-    CREATE TABLE Products
-    (
-        ProductID int,
-        ProductName varchar(1000),
-        Quantity int
-    )
+### 3. Create a New Release Pipeline
+- You can use the `WebAppTerraform.json` file in the repository to import the entire pipeline without creating it from scratch.
 
-    INSERT INTO Products(ProductID, ProductName, Quantity) VALUES (1, 'Mobile', 100)
-    INSERT INTO Products(ProductID, ProductName, Quantity) VALUES (2, 'Laptop', 200)
-    INSERT INTO Products(ProductID, ProductName, Quantity) VALUES (3, 'Tabs', 300)
+## Task Execution Order:
 
-END
-```
+### 1. **Agent Job:**
+   - Keep as default.
 
+### 2. **Install Terraform:**
+   - Go to **Azure Pipelines** → **Releases** → **Edit Pipeline** → **Stage** → **Add Task**.
+   - Install Terraform from the marketplace if it's not already installed. This will make Terraform tasks available in your pipeline.
 
-## Database Connection Setup
+### 3. **Terraform: init**
 
-### 1. Configure Database Connection in Azure WebApp
+   **Display Name:** Terraform: init  
+   **Provider:** `azurerm`  
+   **Command:** `init`  
+   **Configuration Directory:** Browse the directory where the `main.tf` file is located.
 
-Instead of storing database credentials in your code, which is a bad practice, this lab will store credentials within the Azure WebApp, allowing secure connections to the SQL Database.
+   **Azure RM Backend Configuration:**
 
-1. Go to **Azure App Service** -> **Settings** -> **Configuration** -> **Connection Strings**.
-2. Add a new connection string with the following details:
-   - **Name**: `SQLConnection`
-   - **Value**: *[Database Connection String Goes Here]*
-   - **Type**: `SQLAzure`
+   - **Azure Backend Service Connection:** `Service_Connection_Name`
+   - **Resource Group:** The resource group where the storage account resides.
+   - **Storage Account:** Reference the storage account created earlier.
+   - **Container:** `terraform` (Referring to the Blob container).
+   - **Key:** Path to the Terraform remote state file inside the container, e.g., `terraform.tfstate`.
 
-### 2. Retrieve Database Connection String
+   - **Save the task.**
 
-1. Navigate to your **SQL Database** -> **Overview**.
-2. Copy the connection string for ADO.NET (SQL Authentication).
-3. When pasting the connection string in the WebApp, ensure to input the correct password in place of `{your_password}`.
+### 4. **Terraform: plan**
 
-### 3. Update Code for Database Connection
+   **Display Name:** Terraform: plan  
+   **Command:** `plan`  
+   **Configuration Directory:** Select the directory used in the earlier step.  
+   **Azure Subscription:** Select the appropriate subscription.
 
-In your ASP.NET Core application, update the code to retrieve the connection string using the same name (`SQLConnection`) you defined in Azure App Service.
-Look at ProductService.cs
+### 5. **Terraform: apply**
 
-```csharp
-        private SqlConnection GetConnection()
-        {
-        // The SQLConnection is the connection created between AzreWebapp and SQLDatabase
-            return new SqlConnection(_configuration.GetConnectionString("SQLConnection"));
-        }
-```
+   **Display Name:** Terraform: apply  
+   **Command:** `apply`  
+   **Configuration Directory:** Use the same configuration directory as before.  
+   **Subscription:** Specify your Azure subscription.  
+   **Additional Commandline Argument:** `-auto-approve` (This automatically approves the changes to be applied).
 
-## Build Pipeline Setup
+### 6. **SQL Table Creation**
 
-1. Go to **Azure DevOps** -> **Organization** -> **Project** -> **Azure Pipelines** -> **Pipelines**.
-2. Create a new pipeline with the following details:
-   - **Pipeline Name**: `buildppsqlapp`
-   - **Source Code**: GitHub Public Repo
-   - Load the project using an existing YAML file.
-3. Ensure to publish the `ArtifactStagingDirectory` as an artifact called `sql-secure-artifact`.
-4. Run the build pipeline.
+   **Azure SQL Server:** Provide the `sqlserver_name`.  
+   **Connection String:** Update the server name and password in the connection string.
 
-[Azure Pipeline YAML File Explanation](About_Pipeline.md)
+### 7. **Web App Deployment**
 
-## Release Pipeline Setup
+   **App Name:** Specify the name of the web app as given in the Terraform file.
 
-(Use the WebApp Secure.json file to deploy the release pipeline using the import option ) 
-The release pipeline consists of two parts:
+### 8. **Web App Service Settings**
 
-1. **Artifact**: Ensure the correct artifact is specified.
-2. **Deployment Stage (Stage 1)**: This stage includes the following jobs:
+   **App Service Name:** Use the name of the web app as given in the Terraform file.  
+   **Resource Group:** Specify the resource group where the web app resides.
 
-    - **Agent Job**: Executes environment commands and downloads the artifact.
-    - **Azure Database Table Creation**: Update the inline script with the correct SQL query.
-    - **Azure WebApp Deploy**: Deploys the web application.
-    - **Azure App Service Settings**: Configures app service settings, including connection strings.
+### 9. **Create a Release**
 
-Should look something like this:
+   After configuring all tasks, create the release. This will execute the deployment pipeline, provisioning the infrastructure and deploying the application using Terraform.
 
-![Releasepipeline](imgs/releasepipeline.png)
+## Conclusion
 
-![Deploymentstage](imgs/deploymentstage.png)
-
-
-### Deployment Stage Configuration
-
-1. **Artifact**:
-   - Ensure the correct artifact is specified.
-
-2. **Deployment**:
-   - **Agent Job**: No additional configurations required.
-   - **Azure SQL Table Creation**:
-     - Update the inline script with the correct SQL query: [SQL Script](./scripts/script.sql)  
-     
-
-   - **Azure WebApp Deploy**: Deploy the web application. Search for 'Azure Web App' for windows and linux hosts. WebApp name is jus the webapp name in Azure , not fqdn. 
-   - **Azure App Service Settings**:
-     - **Display Name**: Azure App Service Settings
-     - **Azure Subscription**: *[Select your subscription]*
-     - **App Service Name**: *[Select your app service]*
-     - **Resource Group**: *[Select your resource group]*
-     - **Slot**: `production`
-     - **Application Configuration Settings**:
-       - **Connection Strings**: [Connection String Setting](./scripts/ConnectionStringSetting.json)
-         - **Name**: `SQLConnection`
-         - **Value**: *"Server=tcp:appserver6000.database.windows.net,1433;Initial Catalog=appdb;Persist Security Info=False;User ID=sqlusr;Password={your_password};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",*
-         - **Type**: `SQLAzure`
-         - **Slot Settings**: `false`
-
-### Running the Release Pipeline
-
-Once the release pipeline is configured, run the pipeline to deploy the web application connected to the database.
+We have successfully used a Terraform configuration file to deploy resources using Azure Pipelines. By integrating Terraform into your CI/CD pipeline, you can automate the provisioning and management of your infrastructure, ensuring consistency and efficiency across environments.
 
 ---
 
