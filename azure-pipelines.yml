@@ -29,6 +29,7 @@ steps:
     arguments: '--configuration $(buildConfiguration)'
 
 - task: DotNetCoreCLI@2
+  displayName: Package the Build
   inputs:
     command: publish
     publishWebProjects: True
@@ -38,6 +39,13 @@ steps:
 # We still need to take the staging directory files and publish it as a build artifact
 
 - task: PublishPipelineArtifact@1
+  displayName: Publish the Build to Release Pipeline
   inputs:
     targetPath: '$(Build.ArtifactStagingDirectory)' 
     artifactName: 'sqlapp-secure-artifact'
+
+- task: PublishPipelineArtifact@1
+  displayName: Publish the Sources to Release Pipeline
+  inputs:
+    targetPath: '$(Build.SourcesDirectory)/sqlapp/Templates' 
+    artifactName: 'template-artifact'
